@@ -66,7 +66,12 @@ def nfa_to_dfa(states, alphabet, nfa_no_e, start_state, final_states):
 # ---------- Graphviz ----------
 def draw_state_node(dot, state, is_start=False, is_final=False, color="black"):
     shape = "doublecircle" if is_final else "circle"
-    dot.node(state, state, shape=shape, color=color, fontcolor=color)
+    if is_start:
+        dot.node(state, state, shape=shape, color="blue", fillcolor="blue", style="filled", fontcolor="white", fontname="Arial Bold")
+    elif is_final:
+        dot.node(state, state, shape=shape, color="green", fillcolor="green", style="filled", fontcolor="black", fontname="Arial Bold")
+    else:
+        dot.node(state, state, shape=shape, color=color, fontcolor=color)
 
 def draw_nfa_graph(states, alphabet, nfa_no_e, start_state, final_states, color="black"):
     dot = graphviz.Digraph()
@@ -114,7 +119,7 @@ def df_to_latex_matrix_phi(states, alphabet, transitions, start_state, final_sta
             if nxt:
                 row_entries.append(",".join(sorted(nxt)) if len(nxt)>1 else next(iter(nxt)))
             else:
-                row_entries.append("$\phi$")
+                row_entries.append(r"$\phi$")
         latex += row_label + " & " + " & ".join(row_entries) + " \\\\ \\hline\n"
 
     latex += "    \\end{tabular}\n"
@@ -145,7 +150,7 @@ def dfa_to_latex(states, alphabet, transitions, start_state, final_states, capti
                 dst = "".join(sorted(nxt))
                 row_entries.append(dst)
             else:
-                row_entries.append("$\phi$")
+                row_entries.append(r"$\phi$")
         latex += S_lbl + " & " + " & ".join(row_entries) + " \\\\ \\hline\n"
 
     latex += "    \\end{tabular}\n"
