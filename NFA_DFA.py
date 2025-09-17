@@ -81,6 +81,83 @@ def nfa_to_dfa(states, alphabet, nfa_no_e, start_state, final_states):
             dfa_finals.add(S)
     return dfa_states, dfa_trans, dfa_start, dfa_finals
 
+# ---------- DFA Minimization ----------
+def minimize_dfa(states, alphabet, transitions, start_state, final_states):
+    # Remove epsilon from alphabet if present
+    alphabet = [a for a in alphabet if a != "ε"]
+
+    # Convert states to a list of frozensets if not already
+    states = list(states)
+    finals = set(final_states)
+    non_finals = set(states) - finals
+    partitions = []
+    if finals:
+        partitions.append(finals)
+    if non_finals:
+        partitions.append(non_finals)
+
+    def get_partition(state, partitions):
+        for idx, group in enumerate(partitions):
+            if state in group:
+                return idx
+        return None
+
+    changed = True
+    while changed:
+        changed = False
+        new_partitions = []
+        for group in partitions:
+            # Split group by transition signatures
+            signature_map = {}
+            for state in group:
+                signature = tuple(
+                    get_partition(transitions.get((state, a), frozenset()), partitions)
+                    for a in alphabet
+                )
+                if signature not in signature_map:
+                    signature_map[signature] = set()
+                signature_map[signature].add(state)
+            new_partitions.extend(signature_map.values())
+            if len(signature_map) > 1:
+                changed = True
+        partitions = new_partitions
+
+    # Map old states to new state names (as comma-separated string)
+    group_name_map = {}
+    state_map = {}
+    def state_to_label(s):
+        # If s is a frozenset, join its elements
+        if isinstance(s, frozenset):
+            return ', '.join(sorted(str(x) for x in s))
+        return str(s)
+
+    for group in partitions:
+        # If group has only one state, label is that state (unpacked)
+        if len(group) == 1:
+            only = next(iter(group))
+            group_label = state_to_label(only)
+        else:
+            group_label = ', '.join(sorted(state_to_label(x) for x in group))
+        for s in group:
+            state_map[s] = group_label
+        group_name_map[group_label] = group
+
+    min_states = set(group_name_map.keys())
+    min_start = state_map[start_state]
+    min_finals = set(state_map[s] for s in finals if s in state_map)
+    min_trans = {}
+    for s in min_states:
+        group = group_name_map[s]
+        # Pick a representative state from the group
+        orig = next(iter(group))
+        for a in alphabet:
+            dst = transitions.get((orig, a))
+            if dst:
+                # dst may be a frozenset, map to its group label
+                dst_label = state_map[dst]
+                min_trans[(s, a)] = {dst_label}
+    return min_states, alphabet, min_trans, min_start, min_finals
+
 # ---------- Graphviz ----------
 def draw_state_node(dot, state, is_start=False, is_final=False, is_dead=False, color="black"):
     shape = "doublecircle" if is_final else "circle"
@@ -122,8 +199,14 @@ def draw_dfa_graph(dfa_states, alphabet, dfa_trans, dfa_start, dfa_finals, color
     dot = graphviz.Digraph()
     dot.attr(rankdir="LR")
     dot.node("", shape="none")
-    def label_of(S): 
-        return "".join(sorted(S))
+    def label_of(S):
+        # Accept frozenset or set of frozenset (minimized DFA)
+        if isinstance(S, (set, frozenset)):
+            # If S is a set with one frozenset inside, extract it
+            if len(S) == 1 and isinstance(next(iter(S)), frozenset):
+                S = next(iter(S))
+            return ", ".join(sorted(str(x) for x in S))
+        return str(S)
     
     dead_state = None
     for S in dfa_states:
@@ -144,6 +227,9 @@ def draw_dfa_graph(dfa_states, alphabet, dfa_trans, dfa_start, dfa_finals, color
     for (src, a), dst in dfa_trans.items():
         if src == dead_state and dst == dead_state:
             continue  # Skip dead state self-loops, already handled
+        # If dst is a set with one frozenset, extract it
+        if isinstance(dst, set) and len(dst) == 1 and isinstance(next(iter(dst)), frozenset):
+            dst = next(iter(dst))
         dot.edge(label_of(src), label_of(dst), label=a, color=color)
     
     return dot
@@ -185,7 +271,7 @@ def dfa_to_latex(states, alphabet, transitions, start_state, final_states, capti
     latex += "State & " + " & ".join(header_symbols) + " \\\\ \\hline\n"
 
     for S in states:
-        S_lbl = "".join(sorted(S))
+        S_lbl = ", ".join(sorted(S)) if isinstance(S, (set, frozenset)) else str(S)
         if S == start_state:
             S_lbl = "→" + S_lbl
         if S in final_states:
@@ -196,11 +282,14 @@ def dfa_to_latex(states, alphabet, transitions, start_state, final_states, capti
                 continue
             nxt = transitions.get((S,a))
             if nxt:
-                dst = "".join(sorted(nxt))
+                # If nxt is a set with one frozenset, extract it
+                if isinstance(nxt, set) and len(nxt) == 1 and isinstance(next(iter(nxt)), frozenset):
+                    nxt = next(iter(nxt))
+                dst = ", ".join(sorted(str(x) for x in nxt))
                 row_entries.append(dst)
             else:
                 row_entries.append(r"$\phi$")
-        latex += S_lbl + " & " + " & ".join(row_entries) + " \\\\ \\hline\n"
+        latex += S_lbl + " & " + " & ".join(row_entries) + " \\ \\hline\n"
 
     latex += "    \\end{tabular}\n"
     latex += f"    \\caption{{{caption}}}\n"
@@ -269,57 +358,89 @@ if error_msg:
 closures, nfa_no_e, nfa_finals = remove_epsilon(nfa_states, alphabet, nfa_transitions, start_state, final_states)
 dfa_states, dfa_trans, dfa_start, dfa_finals = nfa_to_dfa(nfa_states, alphabet, nfa_no_e, start_state, nfa_finals)
 
-# ---------- Display ----------
-col1, col2 = st.columns(2)
+
+# ---------- Minimized DFA ----------
+min_states, min_alphabet, min_trans, min_start, min_finals = minimize_dfa(
+    dfa_states, alphabet, dfa_trans, dfa_start, dfa_finals
+)
+
 
 # ----- NFA -----
-with col1:
-    st.subheader("NFA State Diagram")
-    nfa_dot = draw_nfa_graph(nfa_states, alphabet, nfa_transitions, start_state, nfa_finals, color="black")
-    st.graphviz_chart(nfa_dot)
-    st.download_button("Download NFA Diagram (SVG)", data=nfa_dot.pipe(format="svg"), file_name="nfa.svg")
+st.subheader("NFA State Diagram")
+nfa_dot = draw_nfa_graph(nfa_states, alphabet, nfa_transitions, start_state, nfa_finals, color="black")
+st.graphviz_chart(nfa_dot)
+st.download_button("Download NFA Diagram (SVG)", data=nfa_dot.pipe(format="svg"), file_name="nfa.svg")
 
-    st.markdown("### NFA Transition Table")
-    nfa_table_data = []
-    for s in nfa_states:
-        row_label = s
-        if s == start_state:
-            row_label = "→" + row_label
-        if s in nfa_finals:
-            row_label += "*"
-        row_entries = {}
-        for a in alphabet + ["ε"]:
-            nxt = nfa_transitions.get((s,a), set())
-            row_entries[a] = ",".join(sorted(nxt)) if nxt else "φ"
-        nfa_table_data.append({"State": row_label, **row_entries})
-    st.dataframe(pd.DataFrame(nfa_table_data))
-    
-    st.subheader("NFA Table LaTeX")
-    st.code(df_to_latex_matrix_phi(nfa_states, alphabet + ["ε"], nfa_transitions, start_state, nfa_finals, caption="Original NFA Transition Table"), language="latex")
+st.markdown("### NFA Transition Table")
+nfa_table_data = []
+for s in nfa_states:
+    row_label = s
+    if s == start_state:
+        row_label = "→" + row_label
+    if s in nfa_finals:
+        row_label += "*"
+    row_entries = {}
+    for a in alphabet + ["ε"]:
+        nxt = nfa_transitions.get((s,a), set())
+        row_entries[a] = ",".join(sorted(nxt)) if nxt else "φ"
+    nfa_table_data.append({"State": row_label, **row_entries})
+st.dataframe(pd.DataFrame(nfa_table_data))
+
+st.subheader("NFA Table LaTeX")
+st.code(df_to_latex_matrix_phi(nfa_states, alphabet + ["ε"], nfa_transitions, start_state, nfa_finals, caption="Original NFA Transition Table"), language="latex")
 
 # ----- DFA -----
-with col2:
-    st.subheader("DFA State Diagram")
-    dfa_dot = draw_dfa_graph(dfa_states, alphabet, dfa_trans, dfa_start, dfa_finals, color="black")
-    st.graphviz_chart(dfa_dot)
-    st.download_button("Download DFA Diagram (SVG)", data=dfa_dot.pipe(format="svg"), file_name="dfa.svg")
+st.subheader("DFA State Diagram")
+dfa_dot = draw_dfa_graph(dfa_states, alphabet, dfa_trans, dfa_start, dfa_finals, color="black")
+st.graphviz_chart(dfa_dot)
+st.download_button("Download DFA Diagram (SVG)", data=dfa_dot.pipe(format="svg"), file_name="dfa.svg")
 
-    st.markdown("### DFA Transition Table")
-    dfa_table_data = []
-    for S in dfa_states:
-        S_lbl = "".join(sorted(S))
-        if S == dfa_start:
-            S_lbl = "→" + S_lbl
-        if S in dfa_finals:
-            S_lbl += "*"
-        row_entries = {}
-        for a in alphabet:
-            if a == "ε":
-                continue
-            nxt = dfa_trans.get((S,a))
-            row_entries[a] = "".join(sorted(nxt)) if nxt else "φ"
-        dfa_table_data.append({"State": S_lbl, **row_entries})
-    st.dataframe(pd.DataFrame(dfa_table_data))
-    
-    st.subheader("DFA Table LaTeX")
-    st.code(dfa_to_latex(dfa_states, alphabet, dfa_trans, dfa_start, dfa_finals, caption="Original DFA Transition Table"), language="latex")
+st.markdown("### DFA Transition Table")
+dfa_table_data = []
+for S in dfa_states:
+    S_lbl = "".join(sorted(S))
+    if S == dfa_start:
+        S_lbl = "→" + S_lbl
+    if S in dfa_finals:
+        S_lbl += "*"
+    row_entries = {}
+    for a in alphabet:
+        if a == "ε":
+            continue
+        nxt = dfa_trans.get((S,a))
+        row_entries[a] = "".join(sorted(nxt)) if nxt else "φ"
+    dfa_table_data.append({"State": S_lbl, **row_entries})
+st.dataframe(pd.DataFrame(dfa_table_data))
+
+st.subheader("DFA Table LaTeX")
+st.code(dfa_to_latex(dfa_states, alphabet, dfa_trans, dfa_start, dfa_finals, caption="Original DFA Transition Table"), language="latex")
+
+# ----- Minimized DFA -----
+
+st.subheader("Minimized DFA State Diagram")
+min_dot = draw_dfa_graph(min_states, min_alphabet, min_trans, min_start, min_finals, color="black")
+st.graphviz_chart(min_dot)
+st.download_button("Download Minimized DFA Diagram (SVG)", data=min_dot.pipe(format="svg"), file_name="min_dfa.svg")
+
+st.markdown("### Minimized DFA Transition Table")
+min_table_data = []
+for S in min_states:
+    S_lbl = str(S)
+    if S == min_start:
+        S_lbl = "→" + S_lbl
+    if S in min_finals:
+        S_lbl += "*"
+    row_entries = {}
+    for a in min_alphabet:
+        nxt = min_trans.get((S,a))
+        if nxt:
+            # nxt is a set with one label string
+            dst_label = next(iter(nxt))
+            row_entries[a] = dst_label
+        else:
+            row_entries[a] = "φ"
+    min_table_data.append({"State": S_lbl, **row_entries})
+st.dataframe(pd.DataFrame(min_table_data))
+
+st.subheader("Minimized DFA Table LaTeX")
+st.code(dfa_to_latex(min_states, min_alphabet, min_trans, min_start, min_finals, caption="Minimized DFA Transition Table"), language="latex")
