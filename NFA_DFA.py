@@ -224,16 +224,22 @@ manual_final = st.sidebar.text_input("Final States (comma separated)", "q1")
 # ---------- Parse Inputs ----------
 if uploaded_file:
     df = pd.read_excel(uploaded_file)
-    nfa_states = list(df['State'].unique())
-    alphabet = list(df['Input'].unique())
-    start_state = df['Start_State'].dropna().iloc[0] if 'Start_State' in df.columns else nfa_states[0]
-    final_states = list(df['Final_State'].dropna())
+    nfa_states = [str(x) for x in df['State'].unique()]
+    alphabet = [str(x) for x in df['Input'].unique()]
+    start_state = str(df['Start_State'].dropna().iloc[0]) if 'Start_State' in df.columns else nfa_states[0]
+    final_states = [str(x) for x in df['Final_State'].dropna()]
+    
+    # Add final states to nfa_states if not present
+    for fs in final_states:
+        if fs not in nfa_states:
+            nfa_states.append(fs)
+    
     nfa_transitions = {}
     for _, row in df.iterrows():
-        key = (row['State'], row['Input'])
+        key = (str(row['State']), str(row['Input']))
         if key not in nfa_transitions:
             nfa_transitions[key] = set()
-        nfa_transitions[key].add(row['Next_State'])
+        nfa_transitions[key].add(str(row['Next_State']))
 else:
     nfa_states = parse_list(manual_states)
     alphabet = parse_list(manual_alphabet)
