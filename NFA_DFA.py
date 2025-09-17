@@ -36,6 +36,9 @@ def remove_epsilon(states, alphabet, enfa, start_state, final_states):
                 for m in move:
                     dest |= closures[m]
                 nfa_no_e[(s, a)] = dest
+            elif s in final_states:
+                # Final state with no transition leads to self-loop
+                nfa_no_e[(s, a)] = {s}
     return closures, nfa_no_e, nfa_finals
 
 def nfa_to_dfa(states, alphabet, nfa_no_e, start_state, final_states):
@@ -44,6 +47,9 @@ def nfa_to_dfa(states, alphabet, nfa_no_e, start_state, final_states):
     unmarked = [dfa_start]
     dfa_trans = {}
     dfa_finals = set()
+    dead_state = frozenset(["q_D"])
+    has_dead_state = False
+    
     while unmarked:
         S = unmarked.pop()
         for a in alphabet:
@@ -58,18 +64,32 @@ def nfa_to_dfa(states, alphabet, nfa_no_e, start_state, final_states):
                 if nxt_f not in dfa_states:
                     dfa_states.append(nxt_f)
                     unmarked.append(nxt_f)
+            else:
+                dfa_trans[(S, a)] = dead_state
+                has_dead_state = True
+    
+    # Add dead state if needed
+    if has_dead_state:
+        dfa_states.append(dead_state)
+        # Dead state transitions to itself for all inputs
+        for a in alphabet:
+            if a != "ε":
+                dfa_trans[(dead_state, a)] = dead_state
+    
     for S in dfa_states:
         if any(s in final_states for s in S):
             dfa_finals.add(S)
     return dfa_states, dfa_trans, dfa_start, dfa_finals
 
 # ---------- Graphviz ----------
-def draw_state_node(dot, state, is_start=False, is_final=False, color="black"):
+def draw_state_node(dot, state, is_start=False, is_final=False, is_dead=False, color="black"):
     shape = "doublecircle" if is_final else "circle"
     if is_start:
         dot.node(state, state, shape=shape, color="blue", fillcolor="blue", style="filled", fontcolor="white", fontname="Arial Bold")
     elif is_final:
         dot.node(state, state, shape=shape, color="green", fillcolor="green", style="filled", fontcolor="black", fontname="Arial Bold")
+    elif is_dead:
+        dot.node(state, state, shape=shape, color="red", fillcolor="red", style="filled", fontcolor="white", fontname="Arial Bold")
     else:
         dot.node(state, state, shape=shape, color=color, fontcolor=color)
 
@@ -80,10 +100,22 @@ def draw_nfa_graph(states, alphabet, nfa_no_e, start_state, final_states, color=
     for s in states:
         draw_state_node(dot, s, is_start=(s==start_state), is_final=(s in final_states), color=color)
     dot.edge("", start_state, color=color)
+    
+    # Group self-loops for final states
+    self_loops = {}
     for (src, a), dsts in nfa_no_e.items():
-        for d in sorted(dsts):
-            dot.edge(src, d, label=a, color=color)
-
+        if src in final_states and dsts == {src}:
+            if src not in self_loops:
+                self_loops[src] = []
+            self_loops[src].append(a)
+        else:
+            for d in sorted(dsts):
+                dot.edge(src, d, label=a, color=color)
+    
+    # Draw combined self-loops for final states
+    for state, inputs in self_loops.items():
+        dot.edge(state, state, label=",".join(inputs), color=color)
+    
     return dot
 
 def draw_dfa_graph(dfa_states, alphabet, dfa_trans, dfa_start, dfa_finals, color="black"):
@@ -92,11 +124,28 @@ def draw_dfa_graph(dfa_states, alphabet, dfa_trans, dfa_start, dfa_finals, color
     dot.node("", shape="none")
     def label_of(S): 
         return "".join(sorted(S))
+    
+    dead_state = None
     for S in dfa_states:
-        draw_state_node(dot, label_of(S), is_start=(S==dfa_start), is_final=(S in dfa_finals), color=color)
+        is_dead = ("q_D" in S and len(S) == 1)
+        if is_dead:
+            dead_state = S
+        draw_state_node(dot, label_of(S), is_start=(S==dfa_start), is_final=(S in dfa_finals), is_dead=is_dead, color=color)
+    
     dot.edge("", label_of(dfa_start), color=color)
+    
+    # Handle dead state self-loop separately
+    if dead_state:
+        dead_inputs = [a for a in alphabet if a != "ε" and dfa_trans.get((dead_state, a)) == dead_state]
+        if dead_inputs:
+            dot.edge(label_of(dead_state), label_of(dead_state), label=",".join(dead_inputs), color=color)
+    
+    # Draw other transitions
     for (src, a), dst in dfa_trans.items():
+        if src == dead_state and dst == dead_state:
+            continue  # Skip dead state self-loops, already handled
         dot.edge(label_of(src), label_of(dst), label=a, color=color)
+    
     return dot
 
 # ---------- LaTeX functions ----------
@@ -145,7 +194,7 @@ def dfa_to_latex(states, alphabet, transitions, start_state, final_states, capti
         for a in alphabet:
             if a == "ε":
                 continue
-            nxt = transitions.get((S,a), set())
+            nxt = transitions.get((S,a))
             if nxt:
                 dst = "".join(sorted(nxt))
                 row_entries.append(dst)
@@ -259,7 +308,9 @@ with col2:
             S_lbl += "*"
         row_entries = {}
         for a in alphabet:
-            nxt = dfa_trans.get((S,a), set())
+            if a == "ε":
+                continue
+            nxt = dfa_trans.get((S,a))
             row_entries[a] = "".join(sorted(nxt)) if nxt else "φ"
         dfa_table_data.append({"State": S_lbl, **row_entries})
     st.dataframe(pd.DataFrame(dfa_table_data))
