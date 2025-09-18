@@ -9,3 +9,6 @@ __pycache__/
 *.log
 *.env
 *.egg-info/
+
+#Ignore vscode AI rules
+.github/instructions/codacy.instructions.md
