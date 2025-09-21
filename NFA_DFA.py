@@ -3,9 +3,9 @@
 import streamlit as st
 import pandas as pd
 import graphviz
-from nfa_dfa_core import remove_epsilon, nfa_to_dfa, minimize_dfa
-from nfa_dfa_graph import draw_nfa_graph, draw_dfa_graph
-from nfa_dfa_latex import df_to_latex_matrix_phi, dfa_to_latex
+from core import remove_epsilon, nfa_to_dfa, minimize_dfa
+from graph import draw_nfa_graph, draw_dfa_graph
+from latex import df_to_latex_matrix_phi, dfa_to_latex
 from utils import parse_list, df_to_excel_bytes
 
 # ---------- Graphviz ----------
