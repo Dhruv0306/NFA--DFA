@@ -263,7 +263,7 @@ def df_to_latex_matrix_phi(states, alphabet, transitions, start_state, final_sta
     return latex
 
 def dfa_to_latex(states, alphabet, transitions, start_state, final_states, caption="DFA Table"):
-    latex = "\\begin{table}[h]\n"
+    latex = "\\begin{table}[H]\n"
     latex += "    \\centering\n"
     latex += "    \\begin{tabular}{|" + "c|"*(len(alphabet)+1) + "}\n"
     latex += "    \\hline\n"
