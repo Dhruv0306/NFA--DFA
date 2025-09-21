@@ -384,7 +384,26 @@ for s in nfa_states:
         nxt = nfa_transitions.get((s,a), set())
         row_entries[a] = ",".join(sorted(nxt)) if nxt else "φ"
     nfa_table_data.append({"State": row_label, **row_entries})
-st.dataframe(pd.DataFrame(nfa_table_data))
+
+nfa_df = pd.DataFrame(nfa_table_data)
+st.dataframe(nfa_df)
+
+# --- NFA Excel Download ---
+import io
+from io import BytesIO
+
+def df_to_excel_bytes(df):
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        df.to_excel(writer, index=False)
+    return output.getvalue()
+
+st.download_button(
+    label="Download NFA Table (Excel)",
+    data=df_to_excel_bytes(nfa_df),
+    file_name="nfa_table.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
 
 st.subheader("NFA Table LaTeX")
 st.code(df_to_latex_matrix_phi(nfa_states, alphabet + ["ε"], nfa_transitions, start_state, nfa_finals, caption="Original NFA Transition Table"), language="latex")
@@ -410,7 +429,17 @@ for S in dfa_states:
         nxt = dfa_trans.get((S,a))
         row_entries[a] = "".join(sorted(nxt)) if nxt else "φ"
     dfa_table_data.append({"State": S_lbl, **row_entries})
-st.dataframe(pd.DataFrame(dfa_table_data))
+
+dfa_df = pd.DataFrame(dfa_table_data)
+st.dataframe(dfa_df)
+
+# --- DFA Excel Download ---
+st.download_button(
+    label="Download DFA Table (Excel)",
+    data=df_to_excel_bytes(dfa_df),
+    file_name="dfa_table.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
 
 st.subheader("DFA Table LaTeX")
 st.code(dfa_to_latex(dfa_states, alphabet, dfa_trans, dfa_start, dfa_finals, caption="Original DFA Transition Table"), language="latex")
@@ -440,7 +469,17 @@ for S in min_states:
         else:
             row_entries[a] = "φ"
     min_table_data.append({"State": S_lbl, **row_entries})
-st.dataframe(pd.DataFrame(min_table_data))
+
+min_df = pd.DataFrame(min_table_data)
+st.dataframe(min_df)
+
+# --- Minimized DFA Excel Download ---
+st.download_button(
+    label="Download Minimized DFA Table (Excel)",
+    data=df_to_excel_bytes(min_df),
+    file_name="minimized_dfa_table.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
 
 st.subheader("Minimized DFA Table LaTeX")
 st.code(dfa_to_latex(min_states, min_alphabet, min_trans, min_start, min_finals, caption="Minimized DFA Transition Table"), language="latex")
