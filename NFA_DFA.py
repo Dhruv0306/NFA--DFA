@@ -236,7 +236,7 @@ def draw_dfa_graph(dfa_states, alphabet, dfa_trans, dfa_start, dfa_finals, color
 
 # ---------- LaTeX functions ----------
 def df_to_latex_matrix_phi(states, alphabet, transitions, start_state, final_states, caption="Table"):
-    latex = "\\begin{table}[h]\n"
+    latex = "\\begin{table}[H]\n"
     latex += "    \\centering\n"
     latex += "    \\begin{tabular}{|" + "c|"*(len(alphabet)+1) + "}\n"
     latex += "    \\hline\n"
@@ -313,22 +313,28 @@ manual_final = st.sidebar.text_input("Final States (comma separated)", "q1")
 # ---------- Parse Inputs ----------
 if uploaded_file:
     df = pd.read_excel(uploaded_file)
-    nfa_states = [str(x) for x in df['State'].unique()]
-    alphabet = [str(x) for x in df['Input'].unique()]
-    start_state = str(df['Start_State'].dropna().iloc[0]) if 'Start_State' in df.columns else nfa_states[0]
-    final_states = [str(x) for x in df['Final_State'].dropna()]
-    
-    # Add final states to nfa_states if not present
-    for fs in final_states:
-        if fs not in nfa_states:
-            nfa_states.append(fs)
-    
+    # Assume first column is 'State', rest are input symbols
+    nfa_states = [str(x).replace("→", "").replace("*", "") for x in df['State']]
+    alphabet = [str(col) for col in df.columns if col != "State"]
+    start_state = None
+    final_states = []
     nfa_transitions = {}
-    for _, row in df.iterrows():
-        key = (str(row['State']), str(row['Input']))
-        if key not in nfa_transitions:
-            nfa_transitions[key] = set()
-        nfa_transitions[key].add(str(row['Next_State']))
+
+    for idx, row in df.iterrows():
+        state_raw = str(row['State'])
+        state = state_raw.replace("→", "").replace("*", "")
+        if "→" in state_raw:
+            start_state = state
+        if "*" in state_raw:
+            final_states.append(state)
+        for a in alphabet:
+            cell = str(row[a]).strip()
+            if cell and cell != "φ" and cell.lower() != "nan":
+                next_states = [s.strip() for s in cell.split(",") if s.strip()]
+                nfa_transitions[(state, a)] = set(next_states)
+    # Fallback if no start state marked
+    if not start_state:
+        start_state = nfa_states[0]
 else:
     nfa_states = parse_list(manual_states)
     alphabet = parse_list(manual_alphabet)
